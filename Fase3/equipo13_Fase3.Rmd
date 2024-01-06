@@ -1,0 +1,991 @@
+---
+title: 
+author: 
+date: 
+output: 
+  html_document: 
+    css: css/style.css
+    theme: journal
+---
+
+<header id="encabezado">
+<img src="css/imagenes/encabezado.png">
+</header>
+
+<h1>Fase 3. Modelación</h1>
+
+<h2>- Limpieza de datos</h2>
+
+
+<div class="textos">
+Exportemos a ***R*** nuestro conjunto de datos para poder comenzar el análisis: 
+</div>
+
+```{r}
+
+# Exportamos los datos con la función import de la 
+# librería rio.
+
+library(readxl)
+datos_sucios<- read_excel("AirQualityUCI.xlsx") 
+
+```
+
+<div class="textos">
+Para mejorar la claridad y evitar confusiones, vamos a proceder a renombrar todas las variables.
+</div>
+
+```{r}
+
+# Renombramos las variables para que sea más fácil poder 
+# trabajar con ellas.
+
+library(dplyr)
+datos_sucios<- rename(datos_sucios, 
+                Fecha = "Date",
+                Hora = "Time",
+                Monoxido_carbono = "CO(GT)",
+                Oxido_estaño = "PT08.S1(CO)",
+                Hidrocarburos_no_metanicos = "NMHC(GT)",
+                Benceno = "C6H6(GT)",
+                Titanio = "PT08.S2(NMHC)",
+                Oxidos_nitrogeno = "NOx(GT)",
+                Oxido_tungsteno = "PT08.S3(NOx)",
+                Dioxido_nitrogeno = "NO2(GT)",
+                Oxido_tungsteno_NO2 = "PT08.S4(NO2)",
+                Oxido_indio = "PT08.S5(O3)",
+                Temperatura = "T",
+                Humedad_relativa  = "RH",
+                Humedad_absoluta = "AH")
+
+```
+
+<div class="textos">
+Comprobemos si el cambio de nombres se realizó de forma adecuada:
+</div>
+
+```{r}
+
+# Veamos si se realizó el cambio en los nombres: 
+names(datos_sucios)
+
+```
+
+<div class="textos">
+Con las variables renombradas y una nomenclatura más clara, veamos un resumen *rápido* de los datos:
+</div>
+
+````{r}
+
+# Resumen rapido, conociendo los tipos de datos 
+skimr::skim(datos_sucios)
+
+````
+
+<div class="textos">
+Con el resumen podemos observar que el conjunto de datos cuenta con *9357* observaciones  de *15* variables. ***R*** ha identificado dos tipos de datos en el conjunto: ***numeric*** (15 variables) y ***POSIXct*** (2 variables). Las variables de tipo *numeric* corresponden a las mediciones de los sensores, mientras que las dos variables de tipo *POSIXct* son la fecha y hora en que se realizaron las mediciones.<br>
+Aunque parece que los datos están completos, es importante recordar que los valores faltantes en el conjunto fueron etiquetados con un valor de **-200**. Por lo tanto, es necesario determinar la cantidad real de datos faltantes en el conjunto tomando en cuenta esta etiqueta. 
+</div>
+
+
+```{r}
+
+# Veamos un conteo de los datos faltantes para cada
+# una de las variables.
+
+sapply(datos_sucios, function(x) sum(x == -200))
+
+
+```
+
+<div class="textos">
+Ahora que hemos evaluado la cantidad real de datos faltantes en el conjunto de datos, podemos observar que la variable que contiene los datos de la concentración promedio de hidrocarburos no metánicos es la que tiene el mayor número de datos faltantes, con un total de 8443. Además, hay tres variables con más de 1600 datos faltantes y finalmente 9 variables con 366 datos faltantes, que corresponden a los datos obtenidos del sensor.
+
+Para poder utilizar algunas de las funciones útiles de ***R*** destinadas específicamente a tratar con datos faltantes, es necesario cambiar los valores de **-200** por **NA**. De esta manera, podremos aprovechar al máximo las herramientas disponibles en ***R*** para el análisis de datos.
+</div>
+
+```{r}
+
+# Reemplzamos los -200 por NA
+datos_sucios <- replace(datos_sucios, datos_sucios == -200, NA)
+
+# Usamos la libreria naniar para ver de forma grafica
+# información de los datos faltantes
+library(naniar)
+
+# Porcentaje de NA
+gg_miss_var(datos_sucios, show_pct = T)
+
+# ¿En dónde se localizan los datos faltantes?:
+vis_miss(datos_sucios)
+
+```
+
+
+<div class="textos">
+De todas las variables disponibles en nuestro conjunto de datos nos centraremos en las siguientes variables, las cuales son fundamentales para la evaluación de la calidad del aire y son ampliamente monitoreadas en diferentes lugares del mundo:
+
+1. **Concentración promedio de $CO$**.
+2. **Concentración promedio de benceno**.
+3. **Concentración promedio de $NO_x$**.
+4. **Concentración promedio de $NO_2$**.
+5. **Temperatura**.
+6. **Humedad relativa**.
+
+Aunque las concentraciones de los compuestos químicos en la atmósfera son lo más relevante, consideramos la temperatura y la humedad relativa importantes para la evaluación de la calidad del aire, ya que pueden afectar la formación y dispersión de contaminantes en el aire.
+
+Después de ver los datos faltantes y ver que la variable de la concentración promedio de hidrocarburos no metánicos es la que más datos faltantes tiene, la haremos a un lado para  realizar la modelación con la mayor cantidad de datos.
+</div>
+
+```{r}
+
+# Seleccionamos las variables que usaremos para el 
+# análisis
+
+library(dplyr)
+calidad_Aire<- select(datos_sucios, 
+                      Monoxido_carbono, 
+                      Benceno,
+                      Oxidos_nitrogeno,
+                      Dioxido_nitrogeno,
+                      Temperatura,
+                      Humedad_relativa)
+
+```
+
+<div class="textos">
+Finalmente, eliminemos todos los renglones donde exista al menos un dato faltante de nuestro conjunto de datos.
+</div>
+
+```{r}
+
+# Eliminamos renglones con CUALQUIER valor faltante
+
+library(tidyr)
+
+calidad_Aire_Limpio<- drop_na(calidad_Aire)
+
+paste("La cantidad de observaciones que quedan después de eliminar los datos faltantes son: ", nrow(calidad_Aire_Limpio))
+
+```
+
+<div class="textos">
+Vemos que después de eliminar los renglones con al menos un dato faltante nos quedan nuestras **6 variables con 6941 observaciones**; es decir, eliminamos aproximadamente el **26%** de los datos. 
+</div>
+
+<h2>- Transformación de los datos</h2>
+
+<div class="textos">
+Consideremos las variables que hemos seleccionado, es importante estudiar sus distribuciones de probabilidad. Recordando un poco lo que hicimos en la **Fase 2** veamos si estas cumplen o no con tener un perfil “*normal*”, veamos las distribuciones:<br>
+***NOTA***: *La línea roja es la curva normal teórica y la línea azul es la densidad empírica*.   
+</div>
+
+````{r}
+library(psych)
+library(paletteer) # Librería para las paletas de colores
+
+# Histogramas
+
+multi.hist(x = calidad_Aire_Limpio, bcol=paletteer_d("RColorBrewer::BuPu"), dcol = c("blue", "red"), dlty = c("dotted", "solid"),lwd=c(2,3),
+           main = c("Monóxido de Carbono","Benceno",
+                    "Óxidos de Nitrógeno","Dióxido de Nitrógeno",
+                    "Temperatura","Humedad Relativa"), global = FALSE)
+````
+
+<div class="textos">
+A primera impresión notamos que las variables correspondientes a las concentraciones de ***monóxido de carbono***, ***benceno*** y ***óxidos de nitrógeno*** **no parecen tener este perfil normal** que estamos buscando, mientras que las variables que corresponden a la concentración de ***dióxido de nitrógeno***, ***temperatura*** y ***humedad relativa*** parece que **si cumplen con el perfil normal**. Pero veamos unas graficas más:    
+</div>
+
+````{r}
+
+attach(calidad_Aire_Limpio)
+
+par(mfrow=c(2,3))
+
+qqnorm(Monoxido_carbono, main="Normal Q-Q Plot (Monóxido de Carbono)",col="darkblue")
+qqline(Monoxido_carbono, col="red", lwd=2)
+
+qqnorm(Benceno, main="Normal Q-Q Plot (Benceno)",col="darkblue")
+qqline(Benceno, col="red", lwd=2)
+
+qqnorm(Oxidos_nitrogeno, main="Normal Q-Q Plot (Óxidos de Nitrógeno)",col="darkblue")
+qqline(Oxidos_nitrogeno, col="red", lwd=2)
+
+qqnorm(Dioxido_nitrogeno, main="Normal Q-Q Plot (Dióxido de Nitrógeno)",col="darkblue")
+qqline(Dioxido_nitrogeno, col="red", lwd=2)
+
+qqnorm(Temperatura, main="Normal Q-Q Plot (Temperatura)",col="darkblue")
+qqline(Temperatura, col="red", lwd=2)
+
+qqnorm(Humedad_relativa, main="Normal Q-Q Plot (Humedad Relativa)",col="darkblue")
+qqline(Humedad_relativa, col="red", lwd=2)
+````
+
+<div class="textos">
+Una forma de ver si existe normalidad consiste en comparar los cuantiles de la distribución observada con los cuantiles teóricos de una distribución normal con la misma media y desviación estándar que los datos. Cuanto más se aproximen los datos a una normal, más alineados están los puntos entorno a la recta. Esta comparación corresponde a las graficas anteriores, con eso podemos concluir que nuestras sospechas eran ciertas, las observaciones de las variables correspondientes a las concentraciones de ***monóxido de carbono***, ***benceno*** y ***óxidos de nitrógeno*** no caen sobre la recta lo que nos indica que no hay normalidad, para las otras tres variables podríamos decir que la “*gran mayoría*” de observaciones si caen sobre la recta. Incluso podríamos realizar una prueba mas rigurosa para comprobar la normalidad, pero por esta ocasión nos quedaremos y aceptaremos estas conclusiones. Entonces, tenemos tres variables problemáticas:
+
+- ***Concentración de monóxido de carbono***
+
+- ***Concentración de benceno ***
+
+- ***Concentración de óxidos de nitrógeno***
+
+Profundicemos en detalle en estas tres variables *problemáticas* y examinemos qué distribuciones de probabilidad podrían modelarlas de manera más precisa.<br>
+
+A primera vista, las distribuciones de probabilidad de las tres variables *problemáticas* parecen exhibir un comportamiento similar (es curioso que tres variables sean descritas por una distribución normal y que las otras tres variables no tengan este comportamiento normal pero que sí sigan un comportamiento bastante parecido entre ellas). Si nos aventuramos aún más, podríamos afirmar que podemos modelar su comportamiento utilizando distribuciones ***Gamma***. Sin embargo, sería prudente no aceptar esto como un hecho y analizar más detenidamente las variables:
+
+- ***Concentración de monóxido de carbono***
+
+Veamos primero la gráfica de ***Cullen & Frey***, esta gráfica se representa el coeficiente de *asimetría* en el eje x y el coeficiente de *curtosis* en el eje y. Cada punto en el gráfico representa una distribución de datos específica. Si los datos siguen una distribución normal, los puntos se agruparán cerca del (0,3) en el gráfico. Si los datos tienen una asimetría o curtosis significativa, los puntos se alejarán de ese punto y se desplazarán hacia diferentes direcciones.<br>
+La grafica de ***Cullen & Frey*** nos ayuda a escoger alguno de los modelos de probabilidad basados en la curtosis y la simetría.
+</div>
+
+````{r}
+
+# Creamos el grafico Cullen & Frey
+library(fitdistrplus)
+descdist(data = Monoxido_carbono, graph = TRUE)
+
+````
+
+<div class="textos">
+Basado en el perfil del histograma y la gráfica de Cullen & Frey, nuestras observaciones preliminares parecen confirmarse, y es plausible que el modelo de probabilidad más apropiado sea una ***Distribución Gamma***, caracterizada por los parámetros *alfa* y *beta*.<br>
+Veamos ahora el valor del ***AIC*** (*Akaike's Information Criterion*) para diferentes distribuciones. El **AIC** es una medida utilizada para la selección de modelos en el contexto del análisis de datos y el ajuste de modelos estadísticos. Cuanto más bajo sea el valor del **AIC**, mejor se considera que es el ajuste del modelo. Esto significa que un modelo con un **AIC** más bajo tiene un buen equilibrio entre ajuste y complejidad, y se prefiere sobre modelos con **AIC** más alto.
+</div>
+
+
+````{r}
+
+library(univariateML)
+library(dplyr)
+library(tibble)
+attach(calidad_Aire_Limpio)
+
+# Calculemos el AIC para diferentes distribuciones de probabilidad
+# y así poder elegir la mejor distribución.
+
+comparacion_aic <- AIC(
+  mlbetapr(Monoxido_carbono), # Beta prime distribution
+  mlexp(Monoxido_carbono), # Exponential distribution
+  mlinvgamma(Monoxido_carbono), # Inverse Gamma distribution
+  mlgamma(Monoxido_carbono), # Gamma distribution
+  mllnorm(Monoxido_carbono), # Log-normal distribution
+  mlrayleigh(Monoxido_carbono), # Rayleigh distribution
+  mlinvgauss(Monoxido_carbono), # Inverse Gaussian
+  mlweibull(Monoxido_carbono), # Weibull distribution
+  mlinvweibull(Monoxido_carbono) # Inverse Weibull distribution
+)
+comparacion_aic %>% rownames_to_column(var = "distribucion") %>% 
+  arrange(AIC)
+
+````
+
+<div class="textos">
+Al analizar los valores del *AIC* de las diferentes distribuciones, se observa que el valor más bajo corresponde a la ***distribución Gamma***, lo que indica que efectivamente es la distribución más adecuada.<br>
+Hagamos el ajuste con una distribución Gamma:
+</div>
+
+````{r}
+
+library(latex2exp)
+library(MASS)
+attach(calidad_Aire_Limpio)
+library(paletteer)
+
+#Realizamos el ajuste de la función de densidad Gamma
+monoxido_fitGamma<- fitdistr(Monoxido_carbono, densfun="gamma")
+
+# Graficamos el histograma junto con la curva de ajuste
+hist(Monoxido_carbono,col=paletteer_d("ggsci::indigo_material"),
+     main=TeX("Monóxido de Carbono"),
+     xlab= TeX("$mg/m^3$"),
+     ylim = c(0, 0.4),
+     breaks=20,
+     prob=TRUE)
+curve(dgamma(x, monoxido_fitGamma$estimate[1],
+                monoxido_fitGamma$estimate[2]),col="red",
+                lwd=2,add=T)
+````
+
+````{r}
+
+paste("Los parámetros encontrados con R por el método de máxima verosimilitud son: ", monoxido_fitGamma$estimate[1], monoxido_fitGamma$estimate[2])
+
+````
+
+<div class="textos">
+Entonces, nuestra variable de concentración de Monóxido de Carbono tiene el comportamiento:<br> <br>
+<center>
+$CO \sim Gamma(\alpha = 2.349, \beta= 1.076)$
+</center>
+</div>
+
+<br>
+
+<div class="textos">
+Para las otras dos variables problemáticas seguiremos el mismo procedimiento.
+
+- ***Concentración de benceno***
+
+Veamos primero la gráfica de ***Cullen & Frey*** para la variable que contiene los datos de la concentración de Benceno:
+</div>
+
+````{r}
+
+# Creamos el grafico Cullen & Frey
+library(fitdistrplus)
+descdist(data = Benceno, graph = TRUE)
+
+````
+
+<div class="textos">
+Vemos que de acuerdo al perfil del histograma y la gráfica de *Cullen & Frey* parece que nuestras sospechas se hacen realidad, el modelo de probabilidad que parece más adecuado parece ser nuevamente una **Distribución Gamma** de parámetros alfa y beta. <br>
+Veamos ahora el valor del ***AIC*** (*Akaike's Information Criterion*) para diferentes distribuciones.
+</div>
+
+````{r}
+
+library(univariateML)
+library(dplyr)
+library(tibble)
+attach(calidad_Aire_Limpio)
+
+# Calculemos el AIC para diferentes distribuciones de probabilidad
+# y así poder elegir la mejor distribución.
+
+comparacion_aic <- AIC(
+  mlbetapr(Benceno), # Beta prime distribution
+  mlexp(Benceno), # Exponential distribution
+  mlinvgamma(Benceno), # Inverse Gamma distribution
+  mlgamma(Benceno), # Gamma distribution
+  mllnorm(Benceno), # Log-normal distribution
+  mlrayleigh(Benceno), # Rayleigh distribution
+  mlinvgauss(Benceno), # Inverse Gaussian
+  mlweibull(Benceno), # Weibull distribution
+  mlinvweibull(Benceno) # Inverse Weibull distribution
+)
+comparacion_aic %>% rownames_to_column(var = "distribucion") %>% 
+  arrange(AIC)
+
+````
+
+<div class="textos">
+Al analizar los valores del *AIC* de las diferentes distribuciones, se observa que el valor más bajo corresponde a la ***distribución Gamma***, lo que indica que efectivamente es la distribución más adecuada.<br>
+Hagamos el ajuste con una distribución Gamma:
+</div>
+
+````{r}
+
+library(latex2exp)
+library(MASS)
+attach(calidad_Aire_Limpio)
+library(paletteer)
+
+#Realizamos el ajuste de la función de densidad Gamma
+benceno_fitGamma<- fitdistr(Benceno, densfun="gamma")
+
+# Graficamos el histograma junto con la curva de ajuste
+hist(Benceno,col=paletteer_d("ggsci::deep_orange_material"),
+     main=TeX("Benceno"),
+     xlab= TeX("$\\mu g/m^3$"),
+     ylim = c(0, 0.08),
+     breaks=20,
+     prob=TRUE)
+curve(dgamma(x, benceno_fitGamma$estimate[1],
+                benceno_fitGamma$estimate[2]),col="red",
+                lwd=2,add=T)
+````
+
+````{r}
+
+paste("Los parámetros encontrados con R por el método de máxima verosimilitud son: ", benceno_fitGamma$estimate[1], benceno_fitGamma$estimate[2])
+
+````
+
+<div class="textos">
+Entonces, nuestra variable de concentración de Benceno tiene el comportamiento:<br> <br>
+<center>
+$Benceno \sim Gamma(\alpha = 1.974, \beta= 0.187)$
+</center>
+</div>
+
+<br>
+
+<div class="textos">
+- ***Concentración de óxidos de nitrógeno***
+
+Estudiemos nuestra última variable problemática. Primero la gráfica de ***Cullen & Frey***:
+</div>
+
+````{r}
+
+# Creamos el grafico Cullen & Frey
+library(fitdistrplus)
+descdist(data = Oxidos_nitrogeno, graph = TRUE)
+
+````
+
+<div class="textos">
+Para esta última variable, parece que la Distribución Gamma ya no es la más adecuada para ajustar los datos. Parece ser que una distribución beta podría ser la mejor opción. Sin embargo, antes de sacar conclusiones, es importante evaluar el valor del ***AIC*** (Akaike's Information Criterion) para diferentes distribuciones.
+</div>
+
+````{r}
+
+library(univariateML)
+library(dplyr)
+library(tibble)
+attach(calidad_Aire_Limpio)
+
+# Calculemos el AIC para diferentes distribuciones de probabilidad
+# y así poder elegir la mejor distribución.
+
+comparacion_aic <- AIC(
+  mlbetapr(Oxidos_nitrogeno), # Beta prime distribution
+  mlexp(Oxidos_nitrogeno), # Exponential distribution
+  mlinvgamma(Oxidos_nitrogeno), # Inverse Gamma distribution
+  mlgamma(Oxidos_nitrogeno), # Gamma distribution
+  mllnorm(Oxidos_nitrogeno), # Log-normal distribution
+  mlrayleigh(Oxidos_nitrogeno), # Rayleigh distribution
+  mlinvgauss(Oxidos_nitrogeno), # Inverse Gaussian
+  mlweibull(Oxidos_nitrogeno), # Weibull distribution
+  mlinvweibull(Oxidos_nitrogeno) # Inverse Weibull distribution
+)
+comparacion_aic %>% rownames_to_column(var = "distribucion") %>% 
+  arrange(AIC)
+
+````
+
+<div class="textos">
+Al analizar los valores del *AIC* de las diferentes distribuciones, se observa que el valor más bajo corresponde a la ***distribución Log-Normal***, una distribución que no teníamos en mente.<br>
+Hagamos el ajuste con una distribución Log-Normal:
+</div>
+
+````{r}
+
+library(latex2exp)
+library(MASS)
+attach(calidad_Aire_Limpio)
+library(paletteer)
+
+#Realizamos el ajuste de la función de densidad Gamma
+oxidos_fitLogNormal<- fitdistr(Oxidos_nitrogeno, densfun="lognormal")
+
+# Graficamos el histograma junto con la curva de ajuste
+hist(Oxidos_nitrogeno,col=paletteer_d("ggsci::teal_material"),
+     main=TeX("Óxidos de Nitrógeno"),
+     xlab= TeX("$ppb$"),
+     ylim = c(0, 0.0045),
+     breaks=20,
+     prob=TRUE)
+curve(dlnorm(x, oxidos_fitLogNormal$estimate[1],
+                oxidos_fitLogNormal$estimate[2]),col="red",
+                lwd=2,add=T)
+````
+````{r}
+
+paste("Los parámetros encontrados con R por el método de máxima verosimilitud son: ", oxidos_fitLogNormal$estimate[1], oxidos_fitLogNormal$estimate[2])
+
+````
+
+<div class="textos">
+Entonces, podemos moodelar el comportamiento de la variable de concentración de Óxidos de Nitrógeno con una distribución Log-Normal con parametros:<br> 
+***meanlog = 5.188, sdlog=0.862***
+</div>
+
+<h2>Método de Box-Cox</h2>
+
+<div class="textos">
+Para transformar la(s) variable(s) para que tenga una distribución normal usaremos la transformación de **Box-Cox** que es una técnica estadística utilizada para estabilizar la varianza y mejorar la normalidad de los datos. Esta técnica fue propuesta por los estadísticos George Box y David Cox.<br>
+Para cada una de las variables problemáticas realizaremos estas transformaciones y mostraremos a continuación los *histogramas* y las gráficas *Normal Q-Q* para ver si la transformación funcionó y las variables se normalizaron. 
+</div>
+
+````{r}
+
+# Mónoxido de Carbono
+library(forecast)
+attach(calidad_Aire_Limpio)
+library(paletteer)
+library(latex2exp)
+
+# Encontramos lambdas optimas
+lambda_monoxido = BoxCox.lambda(Monoxido_carbono,method="loglik",
+                                lower=-100,upper=100)
+lambda_benceno = BoxCox.lambda(Benceno,method="loglik",
+                               lower=-100,upper=100)
+lambda_oxidos = BoxCox.lambda(Oxidos_nitrogeno,method="guerrero",
+                              lower=-100,upper=100)
+
+
+#Realizamos las transformaciones
+trans.monoxido<- BoxCox(Monoxido_carbono, lambda_monoxido)
+trans.benceno<- BoxCox(Benceno, lambda_benceno)
+trans.oxidos<- BoxCox(Oxidos_nitrogeno, lambda_oxidos)
+
+# Histogramas
+# Monóxido de Carbono
+par(mfrow=c(3,3))
+hist(Monoxido_carbono,col=paletteer_d("ggsci::indigo_material"),
+     main=TeX("Monóxido de Carbono"),
+     breaks=20,
+     ylim = c(0, 0.4),
+     prob=TRUE) # variable original
+
+hist(trans.monoxido, col=paletteer_dynamic("cartography::orange.pal", 20),
+     main=TeX("Transformación"),
+     breaks=20,
+     ylim = c(0, 0.5),
+     prob=TRUE)  # variable transformada
+# Graficas Q-Q
+qqnorm(trans.monoxido, col="darkblue", cex = 0.7)
+qqline(trans.monoxido, col="red", lwd=1)
+
+# Benceno
+hist(Benceno,col=paletteer_d("ggsci::deep_orange_material"),
+     main=TeX("Benceno"),
+     breaks=20,
+     ylim = c(0, 0.08),
+     prob=TRUE) # variable original
+
+hist(trans.benceno, col=paletteer_dynamic("cartography::orange.pal", 20),
+     main=TeX("Transformación"),
+     breaks=20,
+     ylim = c(0, 0.3),
+     prob=TRUE)  # variable transformada
+# Graficas Q-Q
+qqnorm(trans.benceno,col="darkblue", cex = 0.7)
+qqline(trans.benceno, col="red", lwd=1)
+
+# Óxidos de Nitrógeno
+hist(Oxidos_nitrogeno,col=paletteer_d("ggsci::teal_material"),
+     main=TeX("Óxidos de Nitrógeno"),
+     breaks=20,
+     ylim = c(0, 0.0045),
+     prob=TRUE) # variable original
+
+hist(trans.oxidos, col=paletteer_dynamic("cartography::orange.pal", 20),
+     main=TeX("Transformación"),
+     breaks=20,
+     ylim = c(0, 0.3),
+     prob=TRUE)  # variable transformada
+# Graficas Q-Q
+qqnorm(trans.oxidos,col="darkblue", cex = 0.7)
+qqline(trans.oxidos, col="red", lwd=1)
+
+````
+
+<div class="textos">
+Podemos ver que después de la transformación realizada a las tres variables problemáticas, los perfiles de sus distribuciones (transformadas) y las gráficas Q-Q nos muestran aparente normalidad en todos los casos. 
+</div>
+
+<h2>- Generación de agrupaciones</h2>
+
+<div class="texto">
+El monóxido de carbono ($CO$) es un gas resultante de la combustión incompleta, que ocurre cuando existe una baja concentración de oxígeno. Según la bibliografía, aproximadamente el 86% de las emisiones de $CO$ provienen del sector del transporte, seguido por un 6% atribuido a la quema de combustibles en la industria, y un 3% originado en procesos industriales. El 4% restante se genera a través de quemas y otros procesos no identificados. Asimismo, el CO se produce de manera natural mediante la oxidación del metano, un proceso comúnmente asociado con la descomposición de materia orgánica.<br>
+
+El $CO$ puede tener efectos adversos en la salud, ya que compite con el oxígeno en la corriente sanguínea, disminuyendo así la capacidad de transporte de oxígeno a los diferentes órganos. Las personas sensibles, especialmente aquellas que padecen problemas cardíacos, pueden experimentar una reducción en su capacidad de oxigenación.<br>
+
+Dado lo anteriormente expuesto, resulta crucial llevar a cabo un monitoreo de los niveles de CO. ***Por tanto, hemos decidido seleccionar la concentración de monóxido de carbono ($CO$) como nuestra variable respuesta***.<br> <br>
+
+
+Para realizar la división del conjunto de datos en dos grupos, se propuso inicialmente basarla en la presencia de registros de concentración de monóxido de carbono que excedieran los límites establecidos por las organizaciones pertinentes. Por ejemplo, en México, el límite para la concentración de monóxido de carbono como contaminante atmosférico es de 12.595 miligramos por metro cúbico en un promedio móvil de ocho horas al año, con el objetivo de proteger la salud de la población susceptible. De manera similar, la Agencia de Protección Ambiental de Estados Unidos (EPA, por sus siglas en inglés) ha establecido un límite ambiental de 10 miligramos por metro cúbico para el monóxido de carbono en el aire, promediado en un período de ocho horas.<br>
+
+Sin embargo, surge un problema con esta división, ya que hay muy pocos registros que superen estas concentraciones. Si consideramos únicamente las observaciones que cumplen con un nivel superior a los 10 miligramos por metro cúbico, nos encontramos con tan solo 5 observaciones. Por lo tanto, se ha tomado la decisión de separar el conjunto de datos basándonos en la **temperatura**. Dado que las observaciones se obtuvieron en una ciudad italiana (no se especifica cuál), se han revisado los registros de temperatura promedio en la ciudad de Roma, Italia, correspondientes al año 2004, y se ha encontrado una temperatura media anual de **17.1°C**. Al analizar los datos, se observa que el promedio de temperatura es de **17.7°C**, lo que parece ser un criterio adecuado para la división. Además, resultará interesante comparar el promedio de la variable respuesta entre ambos grupos para ver  si la concentración de monóxido de carbono aumenta o disminuye en función de la presencia de temperaturas por encima del promedio.
+
+1. Conjunto 1. *Temperatura* $\leq$ **17.7°C**
+2. Conjunto 2. *Temperatura* $>$ **17.7°C**
+
+Hagamos entonces la separación:  
+</div>
+
+````{r}
+
+attach(calidad_Aire_Limpio)
+
+datos_baja_temperatura<- calidad_Aire_Limpio[Temperatura <= 17.7, ]
+datos_alta_temperatura<- calidad_Aire_Limpio[Temperatura > 17.7, ]
+
+length(datos_baja_temperatura$Monoxido_carbono)
+length(datos_alta_temperatura$Monoxido_carbono)
+
+````
+
+<div class="textos">
+Vamos a evaluar si existe una diferencia significativa en el promedio de la concentración de monóxido de carbono entre los dos grupos que hemos creado. Para hacer esto, utilizaremos un intervalo de confianza del **90%**.<br>
+
+Inicialmente, observamos que la distribución del monóxido de carbono no sigue una distribución normal. Sin embargo, para calcular el intervalo de confianza del promedio, basta con tener mas de 25 observaciones para poder decir que los promedios se distribuyen normales. Afortunadamente, contamos con 3694 observaciones en el grupo *datos_baja_temperatura* y 3247 observaciones en el grupo *datos_alta_temperatura*, por lo que se cumple este requisito.<br>
+
+Dado que la varianza de la población es desconocida, utilizaremos un intervalo de confianza para saber si podemos asumir que son iguales.
+</div>
+
+````{r}
+
+# Veamos si es valido suponer varianzas iguales.
+# Verifiquemos mediante un intervalo al 95%.
+vartest.temp<- var.test(datos_alta_temperatura$Monoxido_carbono,
+                        datos_baja_temperatura$Monoxido_carbono,
+                        alternative = "two.sided",conf.level = 0.95)
+vartest.temp$conf.int
+  
+````
+
+<div class="textos">
+Recordemos que con la prueba *var.test* lo que estamos viendo es $\sigma_1/\sigma_2$, si ambas varianzas son iguales el intervalo de confianza de la prueba debe contener al 1. <br>
+El intervalo de confianza calculado al 95% de confianza es: $(0.741, 0.846)$, que claramente no contiene al 1, por lo tanto **no podemos asumir varianzas iguales**. <br>
+Finalmente podemos asumir que nuestras observaciones son independientes. Encontremos entonces el intervalo de confianza de la diferencia de promedios de la concentración de monóxido de carbono entre los dos grupos que hemos creado. 
+</div>
+
+````{r}
+
+# Realizamos la prueba
+prueba_promedios<- t.test(datos_baja_temperatura$Monoxido_carbono,
+                          datos_alta_temperatura$Monoxido_carbono,
+                          alternative="two.sided",mu=0,paired=F,var.equal=F)
+
+prueba_promedios$conf.int
+
+````
+
+<div class="textos">
+El intervalo de confianza al 95% para la comparación del promedio de la variable respuesta entre los dos grupos es: <br>
+<center>
+$\mu_{baja_temp} - \mu_{alta_temp} \in (-0.091, 0.043)$
+</center><br>
+Observamos que el valor cero se encuentra dentro de este intervalo, además de ser un intervalo bastante estrecho con una longitud de $L = 0.134$. Por lo tanto, llegamos a la conclusión de que **no existen diferencias significativas en el promedio de la concentración de monóxido de carbono entre ambos grupos**. Esto indica que la concentración promedio de monóxido de carbono no experimenta cambios significativos en relación a si las temperaturas registradas son superiores o inferiores a la temperatura promedio.
+</div> <br>
+
+<h2>- Modelo de regresión lineal múltiple (Primer modelo)</h2>
+
+<div class="textos">
+Ahora procederemos a desarrollar un modelo que analice la posible relación entre la concentración de monóxido de carbono y las concentraciones promedio de benceno, $NO_x$ y $NO_2$, así como la influencia de la temperatura y la humedad relativa en dichas concentraciones.<br>
+Antes de proceder a la formulación de un modelo, es importante explorar más a fondo las relaciones entre las distintas variables. A continuación, analizaremos estas relaciones mediante representaciones gráficas:
+</div> <br>
+
+````{r}
+
+library(GGally)
+
+ggpairs(calidad_Aire_Limpio)
+
+````
+
+<div class="textos">
+Veamos una gráfica más, una representación de la matriz de correlación:
+</div> <br>
+
+````{r}
+
+library(corrplot)
+corrplot(cor(calidad_Aire_Limpio)) 
+
+````
+
+<div class="textos">
+De las gráficas presentadas podemos concluir que las variables que tienen una mayor relación lineal con la concentración de Monóxido de carboono son:
+
+1. Concentración de Benceno (0.930).
+
+2. Concentración de Óxidos de Nitrógeno (0.786).
+
+3. Concentración de Dióxido de Nitrógeno (0.674).
+
+Las variables predictoras que están más relacionadas entre sí son:
+
+1. Óxidos de Nitrógeno - Benceno (0.718).
+
+2. Dióxido de Nitrógeno - Benceno (0.604).
+
+3. Dióxido de Nitrógeno - Óxidos de Nitrogéno (0.757).
+
+4. Humedad Relativa - Temperatura (0.564).
+
+Vamos a proceder a desarrollar un primer modelo que incluya todas las variables predictoras y evaluaremos su rendimiento inicial. Sin embargo, desde un primer vistazo, podemos anticipar que el modelo no será óptimo debido a la presencia de dependencia lineal entre varias variables predictoras. Además, debemos tener en cuenta que no estamos considerando en este modelo las variables que hemos transformado previamente y que las variables predictoras no siguen una distribución normal.
+</div> <br>
+
+<h3>Primer Modelo</h3>
+
+````{r}
+
+attach(calidad_Aire_Limpio)
+
+# Modelo con todos los predictores
+model.monoxido1<- lm(Monoxido_carbono~Benceno+Oxidos_nitrogeno+Dioxido_nitrogeno+Temperatura+Humedad_relativa, data = calidad_Aire_Limpio)  
+
+summary(model.monoxido1)
+
+````
+
+<div class="textos">
+<h3>INTERPRETACION DEL PRIMER MODELO</h3><br>
+
+Al parecer nuestra suposición inicial no era tan correcta, el primer modelo utilizando todas las variables predictoras no resulto tan malo, veamos algunas conclusiones: 
+
+1.	El modelo con todas las variables introducidas como predictores tiene un R alto (0.90), es capaz de explicar el 90% de la variabilidad observada en la concentración de Monóxido de Carbono.
+
+2.	El valor-p del primer modelo es significativo (< 2.2e-16) por lo que se puede aceptar que el modelo no es por azar, al menos uno de los coeficientes parciales de regresión es distinto de 0. 
+
+3.	Todas las variables son significativas (valor-p de todos los coeficientes del modelo).
+
+El modelo quedaría expresado como:
+<center>
+$CO = 0.1836 + (0.1566)*Benceno + (0.0008)*NO_x + (0.0024)*NO_2 - (0.0123)*T + (0.0015)*Humedad$
+</center>
+</div>
+
+<h3>Validación estadística del modelo</h3><br>
+
+<div class="textos">
+Veamos un resumen del modelo:
+</div>
+
+````{r}
+
+library(gvlma)
+valida_model <- gvlma(model.monoxido1)  
+summary(valida_model)
+
+````
+
+<div class="textos">
+Como ya lo habíamos comentado, todas las variables son **significativas** (valor-p de todos los coeficientes del modelo) y deberían quedarse en el modelo.<br>
+Los errores estándar de cada uno de los coeficientes son:
+
+Coeficiente    | Error Estándar                
+------------|------------------------
+(Intercept) | 4.208e-02
+Benceno | 1.316e-03
+Oxidos_nitrogeno | 5.472e-05 
+Dioxido_nitrogeno | 2.037e-04  
+Temperatura       | 9.522e-04 
+Humedad_relativa | 4.351e-04 
+
+Y el error estándar residual del modelo es: **0.4529**.<br>
+
+Diagnóstico mediante las gráficas que proporciona el programa R
+</div>
+
+````{r}
+
+# Graficas de diagnostico
+plot(model.monoxido1)
+
+````
+<div class="textos">
+Veamoos algunoos comentarios respecto a las gráficas.
+
+1. Gráfica residuos vs valores ajustados: Los residuos parecen estar concentrandose en la primera parte de la gráfica, mostrando alguna especie de patrón. Las observaciones 5817, 4258 y 4259 presentan diferencias mayores, por lo que quizá estas observaciones “tengan algún problema”.
+
+2. Normalidad residuos: Los residuos parecen no comportarse con *normalidad*, y vemos los mayores problemas en las "colas".
+
+3. Gráfica localización-escala: Vemos que la varianza de los residuos ocomienza a crecer, formando una especie de cono. La línea roja va en aumento y no es hoorizoontal.
+
+4. Gráfica residuos vs leverage: El residuo 4259 está fuera de la distancia de Cook.
+
+Lo que parecía un buen modelo por el alto valor de $R^2$ vemos que tiene problemas muy importantes, no está cumpliendo ninguno de los supuestos para poder hacer la regresión lineal, veamos si podemos mejorarlo un poco. 
+</div>
+
+<h2>- Modelo de regresión final</h2>
+
+<div class="textos">
+Para comenzar, veamos si podemos elegir una mejor “combinación” de variable predictoras:
+<div>
+
+````{r}
+
+step(object = model.monoxido1, direction = "both", trace = 1)
+
+````
+<div class="textos">
+Como ya habíamos anticipado, según los valores p que observamos anteriormente, todas las variables resultan significativas y, por lo tanto, deben ser incluidas en el modelo. Sin embargo, con el fin de abordar el problema de la normalización, propongamos ahora la incorporación de las variables transformadas que creamos previamente. De esta manera, podremos evaluar si se produce alguna mejora en el modelo.
+<div>
+
+````{r}
+
+# Agregamos los datos al conjunto
+calidad_Aire_Limpio$transformacion_benceno <- trans.benceno
+calidad_Aire_Limpio$transformacion_oxidos <- trans.oxidos
+
+````
+
+<div class="textos">
+Creamos el modelo:
+<div>
+
+````{r}
+
+attach(calidad_Aire_Limpio)
+
+# Modelo con todos los predictores transformados
+model.monoxido2<- lm(Monoxido_carbono~transformacion_benceno+transformacion_oxidos+Dioxido_nitrogeno+Temperatura+Humedad_relativa, data = calidad_Aire_Limpio)
+
+summary(model.monoxido2)
+
+````
+````{r}
+
+# Graficas de diagnostico
+plot(model.monoxido2)
+
+````
+
+<div class="textos">
+El modelo para nada mejoro, el valor de $R^2$ disminuyo, la normalidad no mejoró y en general todo empeoró, lo único “bueno” es que ahora no hay observaciones fuera de la distancia de Cook.
+<div>
+
+<h3>Multicolinealidad</h3><br>
+
+<div class="textos">
+Ya habíamos dicho que uno de los supuestos que debe satisfacer el modelo de regresión múltiple es el de no multicolinealidad, para ver si existe usaremos: Tolerancia y Factor de Inflación de la Varianza (VIF), si:
+
+-	VIF > 10 es causa de preocupación.
+
+-	VIF es sustancialmente mayor que 1 entonces la regresión puede verse perjudicada.
+
+-	Tolerancia = 1/VIF debajo de 0.1 indica un problema serio.
+
+-	Tolerancia debajo de 0.2 indica un problema potencial.
+
+Como el segundo modelo falló regresemos al primero.
+<div>
+
+````{r}
+
+# Criterio VIF
+library(car)
+vif(model.monoxido1)
+
+````
+<div class="textos">
+Observamos que efectivamente existe una correlación entre las variables, como se pudo apreciar en las gráficas anteriores que mostraban el factor de correlación. Basándonos en esta información, podemos utilizarla como criterio para eliminar algunas variables del modelo. De manera informal, hemos decidido excluir la concentración de óxidos de carbono debido a su fuerte correlación con el dióxido de carbono (0.757). Asimismo, hemos optado por eliminar la humedad relativa debido a su estrecha relación con la temperatura (-0.564).<br>
+Realicemos un nuevo modelo para ver si mejora:
+<div>
+
+````{r}
+attach(calidad_Aire_Limpio)
+
+# Modelo con todos los predictores transformados
+model.monoxido3<- lm(Monoxido_carbono~Benceno+Dioxido_nitrogeno+Temperatura, data = calidad_Aire_Limpio)
+
+summary(model.monoxido3)
+
+````
+
+````{r}
+
+library(gvlma)
+valida_model <- gvlma(model.monoxido3)  
+summary(valida_model)
+
+````
+
+````{r}
+
+# Graficas de diagnostico
+plot(model.monoxido2)
+
+````
+
+<div class="textos">
+El modelo sigue sin mejorar, el primer modelo parece ser el mejor pero como ya mencionamos no cumple con los supuestos de la regresión. <br>
+Veamos ahora como úlitmo intento los valores atípicos.<br>
+<div>
+
+<h3>Valores atípicos</h3>
+
+````{r}
+
+boxplot.matrix(as.matrix(calidad_Aire_Limpio),use.cols = T)
+
+````
+<div class="textos">
+En R existe otra paqueteria que nos ayuda graficamente a encontrar estas observaciones atipicas.
+<div>
+
+````{r}
+
+library(olsrr)
+
+ols_plot_cooksd_chart(model.monoxido1)
+
+# DFBETA mide la diferencia en la estimacion de cada parametro con y sin el punto influyente.
+# Hay un valor de DFBETA para cada observacion, es decir, hay n observaciones y k parametros, por lo que hay n*k DFBETAs. 
+# En general, valores grandes de DFBETAS indican observaciones que son influyentes en la estimacion de cierto parametro.
+
+ols_plot_dfbetas(model.monoxido1)
+
+ols_plot_resid_stud(model.monoxido1)
+
+````
+<div class="textos">
+Como soon muchos datos la realidad es que las graficas parecen noo decir mucho, veamos entonces:
+<div>
+
+````{r}
+
+library(car)
+outlierTest(model.monoxido1)
+
+````
+<div class="textos">
+Con *R* podemos tener un criterio para detectar outliers, descartemos entonces las observaciones de arriba y volvamos a correr el modelo 1 sin estas observaciones.
+<div>
+
+````{r}
+
+registros_a_eliminar <- c(4259, 4258, 5817, 4918, 4204, 5418, 4260, 5417, 5406, 5407)
+
+datos_sin_registros <- calidad_Aire_Limpio[-registros_a_eliminar, ]
+
+model.monoxido4<- lm(Monoxido_carbono~Benceno+Oxidos_nitrogeno+Dioxido_nitrogeno+Temperatura+Humedad_relativa, data = datos_sin_registros)  
+summary(model.monoxido4)
+
+````
+
+````{r}
+
+plot(model.monoxido4)
+
+````
+
+<div class="textos">
+Después de eliminar las observaciones influyentes, hemos observado una mejora en el valor de $R^2$ en nuestro modelo, lo cual puede parecer positivo a simple vista. Sin embargo, al examinar detenidamente las demás métricas y las últimas gráficas, es evidente que el modelo no es sólido. A pesar de que tradicionalmente utilizamos el valor de $R^2$ como una medida para determinar la calidad del modelo, en este caso nos encontramos con problemas que incumplen los supuestos necesarios para realizar la regresión. Ninguno de estos supuestos se cumple, lo cual es motivo de preocupación y nos lleva a cuestionar si este modelo puede ser utilizado de manera apropiada.<br>
+
+Es posible que podríamos realizar más manipulaciones en los datos, como transformar todas las variables a una distribución normal utilizando el método de Box-Cox o explorar diferentes combinaciones de las variables predictoras según su correlación. Sin embargo, a pesar de estas opciones, concluimos que el modelo 1, a pesar de sus limitaciones y errores mencionados anteriormente, es el mejor que podemos obtener en la situación actual. Sin embargo, es importante tener en cuenta que su utilidad puede ser cuestionable y no se recomienda su uso sin tener en cuenta sus limitaciones.
+<div>
+
+<h1>Fase 4. Implementación</h1><br>
+
+<div class="textos">
+Con nuestro mejor modelo (modelo 1) realicemos 3 pronósticos para el valor promedio de la variable respuesta (concentración de monóxido de carbono), recordemos que nuestro modelo es:
+<center>
+$CO = 0.1836 + (0.1566)*Benceno + (0.0008)*NO_x + (0.0024)*NO_2 - (0.0123)*T + (0.0015)*Humedad$
+</center>
+</div>
+
+````{r}
+attach(calidad_Aire_Limpio)
+
+nuevos_datos <- data.frame(
+  var1 = c(max(Benceno)+5,
+           max(Oxidos_nitrogeno)+20,
+           max(Dioxido_nitrogeno)+20,
+           max(Temperatura)+3,
+           max(Humedad_relativa)+2),  # Valores para var1
+  var2 = c(max(Benceno)+10,
+           max(Oxidos_nitrogeno)+40,
+           max(Dioxido_nitrogeno)+40,
+           max(Temperatura)+5,
+           max(Humedad_relativa)+4),  # Valores para var2
+  var3 = c(max(Benceno)+15,
+           max(Oxidos_nitrogeno)+50,
+           max(Dioxido_nitrogeno)+50,
+           max(Temperatura)+7,
+           max(Humedad_relativa)+6),  # Valores para var3
+  stringsAsFactors = FALSE
+)
+
+predicciones <- predict(model.monoxido1, nuevos_datos, interval="prediction")
+head(predicciones)
+
+````
+
+
